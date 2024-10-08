@@ -71,6 +71,8 @@ pub struct Args {
 pub enum LauncherCommands {
     #[clap(about = "Toggle the launcher and switch to the alt-tab view")]
     AltTab,
+    #[clap(about = "Toggle the launcher and switch to the alt-tab view and navigate in reverse")]
+    AltShiftTab,
 }
 
 impl ToString for LauncherCommands {
@@ -158,6 +160,7 @@ pub enum Message {
     KeyboardNav(keyboard_nav::Message),
     ActivationToken(Option<String>, String, String, GpuPreference),
     AltTab,
+    AltShiftTab,
     AltRelease,
 }
 
@@ -516,6 +519,13 @@ impl cosmic::Application for CosmicLauncher {
                     self.alt_tab = true;
                 }
             }
+            Message::AltShiftTab => {
+                if self.alt_tab {
+                    self.focus_previous();
+                } else {
+                    self.alt_tab = true;
+                }
+            }
             Message::AltRelease => {
                 if self.alt_tab {
                     return self.update(Message::Activate(None));
@@ -547,9 +557,11 @@ impl cosmic::Application for CosmicLauncher {
                 }
             }
             DbusActivationDetails::ActivateAction { action, .. } => {
-                if LauncherCommands::from_str(&action).is_err() {
-                    return Command::none();
-                }
+                let message = match LauncherCommands::from_str(&action) {
+                    Ok(LauncherCommands::AltTab) => Message::AltTab,
+                    Ok(LauncherCommands::AltShiftTab) => Message::AltShiftTab,
+                    Err(_) => return Command::none(),
+                };
 
                 if let Some(tx) = &self.tx {
                     let _res = tx.blocking_send(launcher::Request::Search(String::new()));
@@ -560,13 +572,13 @@ impl cosmic::Application for CosmicLauncher {
                     if self.launcher_items.is_empty() {
                         return cosmic::command::message(cosmic::app::message::app(Message::Hide));
                     }
-                    return cosmic::command::message(cosmic::app::message::app(Message::AltTab));
+                    return cosmic::command::message(cosmic::app::message::app(message));
                 }
 
                 self.input_value = action;
                 self.active_surface = true;
                 self.wait_for_result = true;
-                return cosmic::command::message(cosmic::app::message::app(Message::AltTab));
+                return cosmic::command::message(cosmic::app::message::app(message));
             }
             DbusActivationDetails::Open { .. } => {}
         }
